@@ -10,11 +10,16 @@ app = FastAPI()
 # Allow frontend connection
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
+    allow_origins=["*"],  # for testing
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# your routes below
+@app.get("/")
+def read_root():
+    return {"message": "Hello"}
 
 # Request model
 class FarmRequest(BaseModel):
