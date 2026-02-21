@@ -1,89 +1,48 @@
-# spatial_analysis.py
-
 import pandas as pd
 import numpy as np
 
-df = pd.read_csv("virtual_field_data.csv")
+def perform_spatial_analysis(limit: int):
+    # Load the data
+    try:
+        df = pd.read_csv("virtual_field_data.csv")
+    except FileNotFoundError:
+        return {"error": "Data file not found"}
 
-results = []
+    # Use the input to subset the data (Dynamic Analysis)
+    # We take the last 'limit' records to show recent trends
+    subset = df.tail(limit) 
 
-for timestamp in df["timestamp"].unique():
+    results = []
+    for timestamp in subset["timestamp"].unique():
+        temp = subset[subset["timestamp"] == timestamp]
+        values = temp["soil_moisture"].values
+        
+        if len(values) == 0:
+            continue
+            
+        mean = np.mean(values)
+        std = np.std(values)
 
-    temp = df[df["timestamp"] == timestamp]
-    values = temp["soil_moisture"].values
+        if mean == 0:
+            continue
 
-    mean = np.mean(values)
-    variance = np.var(values)
-    std = np.std(values)
-    cv = (std / mean) * 100
+        cv = (std / mean) * 100
+        results.append(cv)
 
-    results.append([timestamp, mean, variance, std, cv])
+    if not results:
+        return {"average_cv": 0, "recommendation": "No data available for this range."}
 
-analysis = pd.DataFrame(
-    results,
-    columns=["timestamp", "mean", "variance", "std_dev", "cv_percent"]
-)
+    average_cv = np.mean(results)
 
-analysis.to_csv("spatial_variance_analysis.csv", index=False)
-
-average_cv = analysis["cv_percent"].mean()
-
-print("Average CV:", round(average_cv, 2), "%")
-
-# Sensor recommendation logic
-if average_cv < 10:
-    recommendation = "Field is uniform → 1-2 sensors sufficient."
-elif 10 <= average_cv < 20:
-    recommendation = "Moderate variability → 3-5 sensors recommended."
-else:
-    recommendation = "High variability → 5+ sensors required."
-
-print("Recommendation:", recommendation)
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import numpy as np
-
-app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# 👇 Request model
-class FarmRequest(BaseModel):
-    farm_size: int
-
-
-@app.post("/spatial-analysis")
-def spatial_analysis(data: FarmRequest):
-
-    farm_size = data.farm_size
-
-    # Simulate soil moisture grid based on farm size
-    num_points = farm_size * 5   # more size → more data points
-    soil_moisture = np.random.normal(
-        loc=30,                 # average moisture
-        scale=farm_size / 20,   # variability increases with size
-        size=num_points
-    )
-
-    mean = np.mean(soil_moisture)
-    std = np.std(soil_moisture)
-    cv = (std / mean) * 100
-
-    if cv < 10:
+    if average_cv < 10:
         recommendation = "Field is uniform → 1-2 sensors sufficient."
-    elif cv < 20:
+    elif average_cv < 20:
         recommendation = "Moderate variability → 3-5 sensors recommended."
     else:
         recommendation = "High variability → 5+ sensors required."
 
     return {
-        "average_cv": round(float(cv), 2),
-        "recommendation": recommendation
+        "average_cv": round(float(average_cv), 2),
+        "recommendation": recommendation,
+        "data_points_analyzed": len(subset)
     }

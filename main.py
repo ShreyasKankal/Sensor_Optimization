@@ -1,57 +1,37 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pandas as pd
 import numpy as np
+from spatial_analysis import perform_spatial_analysis # Link to logic file
 
 app = FastAPI()
 
-# Allow frontend connection
+# Secure CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://sensor-lab-pro.vercel.app"], # Better to be specific!
+    allow_origins=[
+        "https://sensor-lab-pro.vercel.app", 
+        "http://localhost:3000" # For local testing
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 1. Define what the incoming data looks like
+# This Model fixes the 422 error by telling FastAPI exactly what to expect
 class AnalysisRequest(BaseModel):
-    value: int  # This matches the "800" or "10" from your input box
+    value: int 
+
+@app.get("/")
+def read_root():
+    return {"status": "Backend is running successfully"}
 
 @app.post("/spatial-analysis")
-def spatial_analysis(request: AnalysisRequest): # 2. Accept the request body
-
-    df = pd.read_csv("virtual_field_data.csv")
-    
-    # 3. Use the input! 
-    # For example: Only analyze the last 'n' records based on user input
-    # Or filter by a specific range.
-    subset = df.head(request.value) 
-
-    results = []
-    for timestamp in subset["timestamp"].unique():
-        temp = subset[subset["timestamp"] == timestamp]
-        values = temp["soil_moisture"].values
-        mean = np.mean(values)
-        std = np.std(values)
-
-        if mean == 0:
-            continue
-
-        cv = (std / mean) * 100
-        results.append(cv)
-
-    average_cv = np.mean(results) if results else 0
-
-    if average_cv < 10:
-        recommendation = "Field is uniform → 1-2 sensors sufficient."
-    elif average_cv < 20:
-        recommendation = "Moderate variability → 3-5 sensors recommended."
-    else:
-        recommendation = "High variability → 5+ sensors required."
-
-    return {
-        "average_cv": round(float(average_cv), 2),
-        "recommendation": recommendation
-    }
+async def spatial_analysis_endpoint(request: AnalysisRequest):
+    try:
+        # Pass the frontend's 'value' to the logic function
+        result = perform_spatial_analysis(request.value)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
